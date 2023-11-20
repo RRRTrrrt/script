@@ -1,0 +1,76 @@
+import maya.cmds as cmds
+from mgear import rigbits
+
+# 指全体を１つのコントローラで動かす接続をつくるためのスクリプト。
+# 今作成されるコントローラの親にグループを２つ作り、rotate->rotate で接続する。
+
+# 指の一括コントローラの名前を入れる。
+IG_L = 'fingers_integration_L0_ctl'
+IG_R = 'fingers_integration_R0_ctl'
+
+
+# 指のgrp1を接続するためのリスト
+finger_L_grp1 = []
+finger_R_grp1 = []
+# 指のgrp2を接続するためのリスト
+finger_L_grp2 = []
+finger_R_grp2 = []
+
+# 指のコントローラに親としてnpoを2つ追加して、リネームする。
+for side in ['L', 'R']:
+    for sidenum in range(0, 4):  # L/Rの後に続く番号を入力
+        for carpnum in range(0, 3):  # 指の関節に対応する番号を入力
+            for finger in ['finger']:   # 指の名前を入力(finger/thumb,index...)
+                # 対応させる指のコントローラの名前。
+                target = finger + "_" + side + str(sidenum) + "_" + "fk" + str(carpnum) + "_ctl"
+                # 対応させる指のコントローラ親グループの名前。
+                grp_name = finger + "_" + side + str(sidenum) + "_" + "fk" + str(carpnum) + "_grp"
+
+                # grp1として、NPOを追加する。階層：grp１ー＞ctl
+                cmds.select(target)
+                rigbits.addNPO()
+                get_grp = cmds.listRelatives(target, parent=True)
+                new_grp1 = cmds.rename(get_grp, grp_name + "1")
+                if side == 'L':  # 指の関節全体をリストに追加する。
+                    finger_L_grp1.append(new_grp1)
+                if side == 'R':
+                    finger_R_grp1.append(new_grp1)
+
+                # grp2として、NPOを追加する。階層：grp１ー＞grp２ー＞ctl
+                cmds.select(target)
+                rigbits.addNPO()
+                get_grp = cmds.listRelatives(target, parent=True)
+                new_grp2 = cmds.rename(get_grp, grp_name + "2")
+                if carpnum == 0:  # 指の根元のgrp2だけリストに追加する。
+                    if side == 'L':
+                        finger_L_grp2.append(new_grp2)
+                    if side == 'R':
+                        finger_R_grp2.append(new_grp2)
+                else:
+                    pass
+
+# コントローラとgrpを接続する。
+for side, IG, finger_grp1, finger_grp2 in [('L', IG_L, finger_L_grp1, finger_L_grp2), ('R', IG_R, finger_R_grp1, finger_R_grp2)]:
+    for grp1 in finger_grp1:
+        # ctlとgrp1を、rotateZ->rotateZ で接続する。指の関節全体を動かす。グーパー用。
+        grp1_MD = cmds.createNode('multiplyDivide', name=f'finger_{side}_grp1_MD')
+        cmds.setAttr('{}.input2'.format(grp1_MD), -1, -1, -1)
+        cmds.connectAttr(f'{IG}.rotateZ', '{}.input1.input1Z'.format(grp1_MD))
+        cmds.connectAttr('{}.output.outputZ'.format(grp1_MD), '{}.rotateZ'.format(grp1))
+    for grp2 in finger_grp2:
+        # ctlとgrp２を rotateX->rotateY,rotateY->rotate で接続する。指の根元を動かす。
+        grp2_MD = cmds.createNode('multiplyDivide', name=f'finger_{side}_grp2_MD')
+        cmds.connectAttr(f'{IG}.rotateX', '{}.input1.input1X'.format(grp2_MD))
+        cmds.connectAttr('{}.output.outputX'.format(grp2_MD), '{}.rotateY'.format(grp2))
+        cmds.connectAttr(f'{IG}.rotateY', '{}.input1.input1Y'.format(grp2_MD))
+        cmds.connectAttr('{}.output.outputY'.format(grp2_MD), '{}.rotateZ'.format(grp2))
+        # grp2 を指ごとの命名で分ける。
+        if f'{side}0' in grp2:  # L0(index)のとき
+            cmds.setAttr('{}.input2'.format(grp2_MD), -0.5, -0.25, 1.0)
+        elif f'{side}1' in grp2:  # L1(middle)のとき
+            cmds.setAttr('{}.input2'.format(grp2_MD), -0.1, 0.1, 1.0)
+        elif f'{side}2' in grp2:  # L2(ring)のとき
+            cmds.setAttr('{}.input2'.format(grp2_MD), 0.25, 0.5, 1.0)
+        elif f'{side}3' in grp2:  # L3(pinky)のとき
+            cmds.setAttr('{}.input2'.format(grp2_MD), 0.5, 0.5, 1.0)
+
